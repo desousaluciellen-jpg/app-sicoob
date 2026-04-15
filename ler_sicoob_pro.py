@@ -10,16 +10,16 @@ import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-st.set_page_config(page_title="Consolidador SICOOB", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Consolidador SICOOB", page_icon="📊", layout="wide") # Mudei para 'wide' para a tabela caber melhor
 
 st.title("📊 Consolidador de Liquidações SICOOB")
-st.markdown("Faça o upload dos extratos em PDF. O sistema irá extrair, consolidar e gerar a folha de cálculo automaticamente.")
+st.markdown("Faça o upload dos extratos em PDF. O sistema irá extrair, consolidar e gerar a planilha profissional automaticamente.")
 
 arquivos_pdf = st.file_uploader("Arraste os seus PDFs para aqui", type="pdf", accept_multiple_files=True)
 
 if arquivos_pdf:
     if st.button("Processar Documentos"):
-        with st.spinner("A analisar os PDFs..."):
+        with st.spinner("A analisar os PDFs e cruzar os dados..."):
             dados_totais = []
             
             for arquivo in arquivos_pdf:
@@ -71,6 +71,45 @@ if arquivos_pdf:
                 if 'Nosso_Numero' in df.columns:
                     df = df.dropna(subset=['Nosso_Numero'])
 
+                # ==========================================
+                # NOVA SEÇÃO: PRÉ-VISUALIZAÇÃO NA TELA
+                # ==========================================
+                st.divider() # Linha divisória visual
+                st.subheader("👀 Pré-visualização Rápida")
+                
+                # 1. Indicadores (Cards de Resumo)
+                col1, col2, col3 = st.columns(3)
+                total_titulos = len(df)
+                valor_total = df['Valor_Cobrado'].sum() if 'Valor_Cobrado' in df.columns else 0
+                mora_total = df['Mora'].sum() if 'Mora' in df.columns else 0
+                
+                # Formatando os totais para os cards (estilo BR)
+                str_valor = f"R$ {valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                str_mora = f"R$ {mora_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                
+                col1.metric(label="Títulos Processados", value=total_titulos)
+                col2.metric(label="Total Liquidado", value=str_valor)
+                col3.metric(label="Total de Mora", value=str_mora)
+                
+                # 2. Tabela Interativa (Criando uma cópia apenas para visualização bonita)
+                df_view = df.copy()
+                for col in colunas_moeda:
+                    if col in df_view.columns:
+                        # Formata R$ na tela
+                        df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if pd.notnull(x) else "")
+                
+                for col in colunas_data:
+                    if col in df_view.columns:
+                        # Formata Data na tela
+                        df_view[col] = pd.to_datetime(df_view[col]).dt.strftime('%d/%m/%Y')
+                
+                # Renderiza a tabela na tela do Streamlit
+                st.dataframe(df_view, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                # ==========================================
+
+                # Gerar Excel em Memória (O código continua o mesmo a partir daqui)
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df.to_excel(writer, sheet_name='Dados', index=False, startrow=4)
@@ -132,10 +171,11 @@ if arquivos_pdf:
                             cel.fill = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
                             cel.border = Border(top=Side(style='thin', color='BFBFBF'), bottom=Side(style='medium', color='BFBFBF'))
 
-                st.success(f"✅ Processamento concluído! {len(df)} registos consolidados.")
+                st.success(f"✅ Planilha pronta para download!")
                 
+                # Botão de download atualizado
                 st.download_button(
-                    label="📥 Baixar Planilha",
+                    label="📥 Baixar Excel Completo (com totais dinâmicos)",
                     data=output.getvalue(),
                     file_name=f"RELATORIO_SICOOB_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
