@@ -83,7 +83,7 @@ with col_logo:
         </div>
     """, unsafe_allow_html=True)
 with col_titulo:
-    st.markdown("<h1 style='color: #003641; margin-bottom: 0px;'>Consolidador SICOOB Pro</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-bottom: 0px;'>Consolidador SICOOB Pro</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color: #64748b;'>Sistema Inteligente de Auditoria e Consolidação de Liquidações</p>", unsafe_allow_html=True)
 
 st.write("")
