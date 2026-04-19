@@ -1,17 +1,9 @@
 [theme]
-# Cor Principal (Botões, Abas, Spinners) - Ciano Sicoob
+base = "light"
 primaryColor = "#00ae9d"
-
-# Cor de Fundo da Página - Cinza Moderno
 backgroundColor = "#f8fafc"
-
-# Cor de Fundo de Elementos Secundários
 secondaryBackgroundColor = "#ffffff"
-
-# Cor do Texto
 textColor = "#1e293b"
-
-# Fonte Profissional
 font = "sans serif"
 
 [server]
