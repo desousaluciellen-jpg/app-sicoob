@@ -7,33 +7,107 @@ from openpyxl.utils import get_column_letter
 import io
 from datetime import datetime
 import warnings
+import time
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-st.set_page_config(page_title="Consolidador SICOOB", page_icon="📊", layout="wide") # Mudei para 'wide' para a tabela caber melhor
+st.set_page_config(page_title="Consolidador SICOOB", page_icon="📊", layout="wide")
 
-st.title("📊 Consolidador de Liquidações SICOOB")
-st.markdown("Faça o upload dos extratos em PDF. O sistema irá extrair, consolidar e gerar a planilha profissional automaticamente.")
+# ==========================================
+# INJEÇÃO DE CSS: CARDS BONITOS E CORES SICOOB
+# ==========================================
+st.markdown("""
+<style>
+    /* Deixa o fundo do site levemente cinza para destacar os cards brancos */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* Estilização dos Cards das Métricas */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        border-left: 6px solid #00ae9d; /* Ciano SICOOB */
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    /* Efeito ao passar o mouse por cima do Card */
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    }
 
-arquivos_pdf = st.file_uploader("Arraste os seus PDFs para aqui", type="pdf", accept_multiple_files=True)
+    /* Título do Card */
+    [data-testid="stMetricLabel"] {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #475569 !important;
+    }
 
-if arquivos_pdf:
-    if st.button("Processar Documentos"):
-        with st.spinner("A analisar os PDFs e cruzar os dados..."):
-            dados_totais = []
+    /* Valor Numérico do Card */
+    [data-testid="stMetricValue"] {
+        font-size: 32px !important;
+        font-weight: 800 !important;
+        color: #003641 !important; /* Verde Escuro SICOOB */
+    }
+    
+    /* Esconder o cabeçalho padrão do Streamlit (opcional, deixa mais clean) */
+    header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# Cabeçalho da Aplicação
+col_logo, col_titulo = st.columns([1, 8])
+with col_logo:
+    st.markdown("<h1 style='text-align: center; color: #00ae9d;'>📊</h1>", unsafe_allow_html=True)
+with col_titulo:
+    st.markdown("<h1 style='color: #003641; margin-bottom: 0px;'>Consolidador SICOOB Pro</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #64748b;'>Extração, consolidação e formatação automática de extratos em PDF.</p>", unsafe_allow_html=True)
+
+st.divider()
+
+# Criação de Abas para Organizar a Tela
+aba_processamento, aba_auditoria = st.tabs(["📤 Upload e Resumo", "🔎 Auditoria de Dados"])
+
+with aba_processamento:
+    arquivos_pdf = st.file_uploader("Arraste os seus extratos em PDF para aqui", type="pdf", accept_multiple_files=True)
+
+    if arquivos_pdf:
+        if st.button("Processar Documentos", type="primary"):
             
-            for arquivo in arquivos_pdf:
-                doc = fitz.open(stream=arquivo.read(), filetype="pdf")
-                for page in doc:
-                    for t in page.find_tables():
-                        df = t.to_pandas()
-                        if any('Sacado' in col for col in df.columns) and any('Valor (R$)' in col for col in df.columns):
-                            df['Arquivo_Origem'] = arquivo.name 
-                            dados_totais.append(df)
-                doc.close()
+            # Barra de progresso para UX
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            dados_totais = []
+            total_arquivos = len(arquivos_pdf)
+            
+            for i, arquivo in enumerate(arquivos_pdf):
+                status_text.text(f"Analisando arquivo {i+1} de {total_arquivos}: {arquivo.name}...")
+                try:
+                    doc = fitz.open(stream=arquivo.read(), filetype="pdf")
+                    for page in doc:
+                        for t in page.find_tables():
+                            df = t.to_pandas()
+                            if any('Sacado' in col for col in df.columns) and any('Valor (R$)' in col for col in df.columns):
+                                df['Arquivo_Origem'] = arquivo.name 
+                                dados_totais.append(df)
+                    doc.close()
+                except Exception as e:
+                    st.warning(f"Não foi possível ler o arquivo {arquivo.name}. Ele foi ignorado.")
+                
+                # Atualiza a barra de progresso
+                progress_bar.progress((i + 1) / total_arquivos)
+
+            status_text.text("Estruturando dados...")
+            time.sleep(0.5) # Pausa dramática para o usuário ver que terminou
+            status_text.empty()
+            progress_bar.empty()
 
             if not dados_totais:
-                st.error("Nenhuma tabela válida encontrada nos PDFs enviados!")
+                st.error("Nenhuma tabela válida encontrada nos PDFs enviados! Verifique se são relatórios do SICOOB.")
             else:
                 df_raw = pd.concat(dados_totais, ignore_index=True)
 
@@ -68,48 +142,34 @@ if arquivos_pdf:
                         df[col] = pd.to_datetime(df[col], format='%d/%m/%Y', errors='coerce')
 
                 df = df.replace({pd.NaT: None, float('nan'): None})
+                
+                # Remoção de Linhas Vazias e Duplicadas (Proteção)
                 if 'Nosso_Numero' in df.columns:
+                    linhas_antes = len(df)
                     df = df.dropna(subset=['Nosso_Numero'])
+                    df = df.drop_duplicates(subset=['Nosso_Numero'])
+                    linhas_depois = len(df)
+                    if linhas_antes != linhas_depois:
+                        st.info(f"Limpeza Automática: {linhas_antes - linhas_depois} títulos duplicados foram removidos da consolidação.")
 
                 # ==========================================
-                # NOVA SEÇÃO: PRÉ-VISUALIZAÇÃO NA TELA
+                # INDICADORES (CARDS CSS APLICADOS AQUI)
                 # ==========================================
-                st.divider() # Linha divisória visual
-                st.subheader("👀 Pré-visualização Rápida")
-                
-                # 1. Indicadores (Cards de Resumo)
+                st.subheader("Resumo da Consolidação")
                 col1, col2, col3 = st.columns(3)
+                
                 total_titulos = len(df)
                 valor_total = df['Valor_Cobrado'].sum() if 'Valor_Cobrado' in df.columns else 0
                 mora_total = df['Mora'].sum() if 'Mora' in df.columns else 0
                 
-                # Formatando os totais para os cards (estilo BR)
                 str_valor = f"R$ {valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
                 str_mora = f"R$ {mora_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
                 
                 col1.metric(label="Títulos Processados", value=total_titulos)
                 col2.metric(label="Total Liquidado", value=str_valor)
                 col3.metric(label="Total de Mora", value=str_mora)
-                
-                # 2. Tabela Interativa (Criando uma cópia apenas para visualização bonita)
-                df_view = df.copy()
-                for col in colunas_moeda:
-                    if col in df_view.columns:
-                        # Formata R$ na tela
-                        df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if pd.notnull(x) else "")
-                
-                for col in colunas_data:
-                    if col in df_view.columns:
-                        # Formata Data na tela
-                        df_view[col] = pd.to_datetime(df_view[col]).dt.strftime('%d/%m/%Y')
-                
-                # Renderiza a tabela na tela do Streamlit
-                st.dataframe(df_view, use_container_width=True, hide_index=True)
-                
-                st.divider()
-                # ==========================================
 
-                # Gerar Excel em Memória (O código continua o mesmo a partir daqui)
+                # Gerar Excel em Memória
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df.to_excel(writer, sheet_name='Dados', index=False, startrow=4)
@@ -171,13 +231,35 @@ if arquivos_pdf:
                             cel.fill = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
                             cel.border = Border(top=Side(style='thin', color='BFBFBF'), bottom=Side(style='medium', color='BFBFBF'))
 
-                st.success(f"✅ Planilha pronta para download!")
+                st.write("") # Espaçamento
+                st.success("✅ Tudo pronto! O cruzamento de dados foi concluído com sucesso.")
                 
-                # Botão de download atualizado
-                st.download_button(
-                    label="📥 Baixar Excel Completo (com totais dinâmicos)",
-                    data=output.getvalue(),
-                    file_name=f"RELATORIO_SICOOB_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
+                # Centralizando o botão de download para chamar mais atenção
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+                with col_btn2:
+                    st.download_button(
+                        label="📥 BAIXAR PLANILHA CONSOLIDADA",
+                        data=output.getvalue(),
+                        file_name=f"RELATORIO_SICOOB_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True
+                    )
+
+                # ==========================================
+                # ABA 2: VISUALIZAÇÃO INTERATIVA (DATAFRAME)
+                # ==========================================
+                with aba_auditoria:
+                    st.markdown("### Pré-visualização da Tabela")
+                    st.caption("Esta é uma prévia dos dados limpos. Para realizar filtros complexos ou imprimir, baixe a planilha na aba Upload.")
+                    
+                    df_view = df.copy()
+                    for col in colunas_moeda:
+                        if col in df_view.columns:
+                            df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if pd.notnull(x) else "")
+                    
+                    for col in colunas_data:
+                        if col in df_view.columns:
+                            df_view[col] = pd.to_datetime(df_view[col]).dt.strftime('%d/%m/%Y')
+                    
+                    st.dataframe(df_view, use_container_width=True, hide_index=True)
